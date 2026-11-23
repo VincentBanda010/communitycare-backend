@@ -10,6 +10,8 @@ serving of pre-published update files. The current Android app records health-wo
 triage outcomes offline; it does not perform AI assessment or generate referrals. The
 reporting contract accepts only a timestamp and the worker-confirmed triage category.
 
+Current 1.4 preview adds [persistent facility team messaging and live statistics](docs/ORGANIZED_APP.md).
+
 ## Local setup (PowerShell)
 
 Requires Python 3.11+ and a running PostgreSQL database.
@@ -56,7 +58,7 @@ delivery worker. Stop with Ctrl+C. Java and Maven are no longer required.
 
 ## Android API (unchanged routes)
 
-All `/api/v1` routes require an RS256 OAuth bearer token. Signature, expiration,
+Protected `/api/v1` routes require an RS256 OAuth bearer token. The native account registration, login, refresh and password-reset routes have the documented public exception. Signature, expiration,
 issuer and audience are checked; `sub` is required. Encounter routes additionally
 require a server-assigned `dhis_org_unit` claim containing an 11-character UID.
 Users in one organisation unit share its receipts. Public health does not require

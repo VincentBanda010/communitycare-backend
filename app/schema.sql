@@ -12,3 +12,15 @@ CREATE TABLE IF NOT EXISTS sync_event (
     PRIMARY KEY (org_unit, encounter_id)
 );
 CREATE INDEX IF NOT EXISTS sync_event_ready ON sync_event (next_attempt) WHERE state='QUEUED';
+
+CREATE TABLE IF NOT EXISTS team_message (
+    org_unit varchar(11) NOT NULL,
+    message_id uuid NOT NULL,
+    sender_id varchar(255) NOT NULL,
+    payload bytea NOT NULL,
+    payload_digest bytea NOT NULL,
+    sent_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (org_unit, message_id)
+);
+CREATE INDEX IF NOT EXISTS team_message_recent ON team_message(org_unit, sent_at DESC, message_id DESC);
+CREATE INDEX IF NOT EXISTS team_message_sender ON team_message(org_unit, sender_id, sent_at DESC);

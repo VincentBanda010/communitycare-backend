@@ -11,6 +11,7 @@ from .auth import TokenVerifier, org_unit
 from .config import Settings
 from .delivery import DeliveryWorker
 from .models import Encounter
+from .messages import TeamMessages, MessageForm
 from .queue import SyncQueue
 from .quality import ReportingQuality
 
@@ -54,7 +55,7 @@ def create_app(settings=None, queue=None, verifier=None, *, start_worker=True, q
 
     @api.middleware("http")
     async def no_store(request, call_next):
-        if request.url.path.startswith("/api/v1/auth/"):
+        if request.url.path.startswith(("/api/v1/auth/", "/api/v1/messages")):
             size = request.headers.get("content-length")
             if size is not None and (not size.isdigit() or int(size) > 16384):
                 return JSONResponse({"detail": "Account form is too large"}, status_code=413)
@@ -65,7 +66,7 @@ def create_app(settings=None, queue=None, verifier=None, *, start_worker=True, q
 
     @api.exception_handler(RequestValidationError)
     async def validation_error(request, error):
-        if request.url.path.startswith("/api/v1/auth/"):
+        if request.url.path.startswith(("/api/v1/auth/", "/api/v1/messages")):
             return JSONResponse({"detail": "Check the account form fields and try again"}, status_code=422)
         from fastapi.exception_handlers import request_validation_exception_handler
         return await request_validation_exception_handler(request, error)
@@ -144,6 +145,21 @@ def create_app(settings=None, queue=None, verifier=None, *, start_worker=True, q
         if result is None:
             raise HTTPException(404, "Encounter not found")
         return result
+
+    def message_org(actor, expected_org):
+        assigned = org_unit(actor)
+        if expected_org is not None and expected_org != assigned:
+            raise HTTPException(403, "Facility assignment changed; sign in again")
+        return assigned
+
+    @api.get("/api/v1/messages")
+    def messages(actor=Depends(claims), expected_org: str | None = Header(default=None, alias="X-Organisation-Unit")):
+        return TeamMessages(resources["queue"]).list(message_org(actor, expected_org))
+
+    @api.put("/api/v1/messages/{message_id}")
+    def send_message(message_id: UUID, form: MessageForm, actor=Depends(claims),
+                     expected_org: str | None = Header(default=None, alias="X-Organisation-Unit")):
+        return TeamMessages(resources["queue"]).send(message_org(actor, expected_org), actor, message_id, form)
 
     @api.get("/api/v1/updates/{filename}")
     def download(filename: str, actor=Depends(claims)):
