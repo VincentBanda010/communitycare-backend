@@ -1,0 +1,16 @@
+.env*
+.venv
+.git
+__pycache__
+.pytest_cache
+*.zip
+*.tar.gz
+*.private*
+*.key
+*.pem
+CONTABO_LOGIN_PRIVATE.txt
+deploy/*
+!deploy/*.py
+!deploy/*.sh
+!deploy/*.md
+!deploy/compose.json
