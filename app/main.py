@@ -1,7 +1,10 @@
 import re
 from contextlib import asynccontextmanager
 from uuid import UUID
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Response, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.security import HTTPAuthorizationCredentials
+from .accounts import NativeAccounts, Login, Refresh, Registration, Reset
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.concurrency import run_in_threadpool
 from .auth import TokenVerifier, org_unit
@@ -12,7 +15,7 @@ from .queue import SyncQueue
 from .quality import ReportingQuality
 
 
-def create_app(settings=None, queue=None, verifier=None, *, start_worker=True, quality=None):
+def create_app(settings=None, queue=None, verifier=None, *, start_worker=True, quality=None, accounts=None):
     resources = {}
 
     @asynccontextmanager
@@ -24,7 +27,8 @@ def create_app(settings=None, queue=None, verifier=None, *, start_worker=True, q
             await run_in_threadpool(storage.open)
             resources.update(settings=configuration, queue=storage,
                              verifier=verifier or await run_in_threadpool(TokenVerifier, configuration),
-                             quality=quality or ReportingQuality(configuration))
+                             quality=quality or ReportingQuality(configuration),
+                             accounts=accounts or NativeAccounts.from_env())
             if start_worker:
                 worker = DeliveryWorker(storage, configuration)
                 worker.start()
@@ -32,6 +36,8 @@ def create_app(settings=None, queue=None, verifier=None, *, start_worker=True, q
         finally:
             if worker:
                 await run_in_threadpool(worker.close)
+            if resources.get("accounts"):
+                await run_in_threadpool(resources["accounts"].close)
             if resources.get("quality"):
                 await run_in_threadpool(resources["quality"].close)
             await run_in_threadpool(storage.close)
@@ -48,10 +54,50 @@ def create_app(settings=None, queue=None, verifier=None, *, start_worker=True, q
 
     @api.middleware("http")
     async def no_store(request, call_next):
+        if request.url.path.startswith("/api/v1/auth/"):
+            size = request.headers.get("content-length")
+            if size is not None and (not size.isdigit() or int(size) > 16384):
+                return JSONResponse({"detail": "Account form is too large"}, status_code=413)
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
+
+    @api.exception_handler(RequestValidationError)
+    async def validation_error(request, error):
+        if request.url.path.startswith("/api/v1/auth/"):
+            return JSONResponse({"detail": "Check the account form fields and try again"}, status_code=422)
+        from fastapi.exception_handlers import request_validation_exception_handler
+        return await request_validation_exception_handler(request, error)
+
+    def session_result(result):
+        actor = resources["verifier"](HTTPAuthorizationCredentials(scheme="Bearer", credentials=result["accessToken"]))
+        org_unit(actor)
+        return result
+
+    @api.post("/api/v1/auth/login")
+    def native_login(form: Login, request: Request):
+        service = resources["accounts"]
+        service.limit("login", request.client.host if request.client else "unknown", form.username)
+        return session_result(service.login(form))
+
+    @api.post("/api/v1/auth/refresh")
+    def native_refresh(form: Refresh, request: Request):
+        service = resources["accounts"]
+        service.limit("refresh", request.client.host if request.client else "unknown", form.refreshToken.get_secret_value())
+        return session_result(service.refresh(form))
+
+    @api.post("/api/v1/auth/register", status_code=201)
+    def native_register(form: Registration, request: Request):
+        service = resources["accounts"]
+        service.limit("register", request.client.host if request.client else "unknown", form.email)
+        return service.register(form)
+
+    @api.post("/api/v1/auth/password-reset", status_code=202)
+    def native_reset(form: Reset, request: Request):
+        service = resources["accounts"]
+        service.limit("reset", request.client.host if request.client else "unknown", form.username)
+        return service.reset(form)
 
     @api.get("/actuator/health")
     def health():
