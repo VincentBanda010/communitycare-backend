@@ -192,3 +192,5 @@ References: [DHIS2 public demo](https://docs.dhis2.org/en/use/user-guides/dhis-c
 ## Reporting-quality preview — 23 November 2026
 
 Live nonclinical reporting-quality AI is implemented. See [release status](docs/REPORTING_QUALITY_RELEASE.md), [model card](docs/MODEL_CARD.md) and [data provenance](docs/DATA_SOURCES.md). The current owned DHIS2 pilot includes six engineering reports; the model is experimental and has no clinical validation.
+
+Formatted documentation: [PDF](docs/CommunityCare_AI_Technical_Documentation.pdf) and [Word](docs/CommunityCare_AI_Technical_Documentation.docx). Body text is justified and all document text uses Century Gothic. [Public pitch deck](docs/CommunityCare_AI_Pitch_Deck.pdf). Reviewer credentials are supplied privately with the ITU application and are excluded from this repository.
