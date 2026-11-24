@@ -61,7 +61,7 @@ def api(tmp_path, monkeypatch):
 
     def token(**changes):
         claims = {"iss": verifier.issuer, "aud": verifier.audience, "sub": "worker",
-                  "exp": datetime.now(timezone.utc) + timedelta(minutes=5), "dhis_org_unit": ORG}
+                  "exp": datetime.now(timezone.utc) + timedelta(minutes=5), "communitycare_role":"HSA", "dhis_org_unit": ORG}
         claims.update(changes)
         return {"Authorization": "Bearer " + jwt.encode(claims, private_key, algorithm="RS256")}
 
@@ -86,7 +86,7 @@ def test_mobile_profile_requires_authorized_organisation(api):
     assert client.get("/api/v1/me", headers=token(dhis_org_unit="bad")).status_code == 403
     response = client.get("/api/v1/me", headers=token(name="Community worker", preferred_username="worker01"))
     assert response.status_code == 200
-    assert response.json() == {"subject": "worker", "username": "worker01", "name": "Community worker", "orgUnit": ORG}
+    assert response.json() == {"subject": "worker", "username": "worker01", "name": "Community worker", "orgUnit": ORG, "role":"HSA", "permissions": __import__("app.permissions",fromlist=["PERMISSIONS"]).PERMISSIONS["HSA"]}
     assert response.headers["cache-control"] == "no-store"
 
 

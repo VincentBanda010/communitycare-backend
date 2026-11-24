@@ -10,7 +10,7 @@ serving of pre-published update files. The current Android app records health-wo
 triage outcomes offline; it does not perform AI assessment or generate referrals. The
 reporting contract accepts only a timestamp and the worker-confirmed triage category.
 
-Current 1.4 preview adds [persistent facility team messaging and live statistics](docs/ORGANIZED_APP.md).
+Current 1.5 preview adds [staff roles, approval and shared task workflows](docs/STAFF_ROLES.md), with the original mobile dashboard restored.
 
 ## Local setup (PowerShell)
 
@@ -206,3 +206,7 @@ Version 1.2 restores the original CommunityCare dashboard, quick actions, patien
 ## Original on phone account forms
 
 Version 1.3 restores the original Create Account and Sign In fields directly on the phone, connected to the owned identity service through the Python backend. Live registration, login, refresh, pilot-only assignment and reporting analysis are verified. Checks: 49 backend tests and 22 Android tests, assembly and lint. [Account guide](docs/NATIVE_ACCOUNTS.md). Gmail recovery email still requires the owner’s app password.
+
+## Four staff roles and original dashboard
+
+See [STAFF_ROLES.md](docs/STAFF_ROLES.md) for the HSA, Nurse, Clinical Officer and Supervisor task matrix, test-pilot registration policy, operational approval, audit history and API contract.

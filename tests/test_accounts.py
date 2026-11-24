@@ -39,7 +39,7 @@ def test_registration_never_uses_requested_role_as_permission_or_client_facility
 def test_unknown_registration_fields_and_password_errors_are_redacted():
     account=service(lambda r:httpx.Response(500))
     settings=SimpleNamespace(update_directory=None)
-    app=create_app(settings,MemoryQueue(),lambda c:{'sub':'test','dhis_org_unit':'Abcdef12345'},start_worker=False,accounts=account)
+    app=create_app(settings,MemoryQueue(),lambda c:{'sub':'test','communitycare_role':'HSA','dhis_org_unit':'Abcdef12345'},start_worker=False,accounts=account)
     with TestClient(app) as client:
         secret='NeverEchoThisPassword'
         response=client.post('/api/v1/auth/register',json={'fullName':'Test Nurse','email':'test@example.invalid','phone':'+265000000000','role':'Nurse','password':secret,'orgUnit':'Other123456'})

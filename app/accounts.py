@@ -53,7 +53,7 @@ class Reset(BaseModel):
 
 
 class NativeAccounts:
-    def __init__(self, issuer, client_id, secret, *, pilot_org=None, smtp=False, key=b"disabled", client=None, clock=time.monotonic):
+    def __init__(self, issuer, client_id, secret, *, pilot_org=None, pilot_roles=False, smtp=False, key=b"disabled", client=None, clock=time.monotonic):
         self.issuer = https_url(issuer)
         base, realm = self.issuer.rsplit("/realms/", 1)
         self.admin = base + "/admin/realms/" + realm
@@ -61,6 +61,9 @@ class NativeAccounts:
         self.enabled = bool(client_id and secret)
         if pilot_org and not UID.fullmatch(pilot_org):
             raise ValueError("Invalid engineering pilot organisation")
+        if pilot_roles and not pilot_org:
+            raise ValueError("Immediate role registration requires an engineering pilot organisation")
+        self.pilot_roles = pilot_roles
         self.pilot_org, self.smtp, self.key = pilot_org, smtp, key
         self.client = client or httpx.Client(timeout=httpx.Timeout(20, connect=5), follow_redirects=False)
         self.clock = clock
@@ -72,6 +75,7 @@ class NativeAccounts:
         return cls(os.getenv("OIDC_ISSUER", "https://disabled.invalid/realms/communitycare"),
                    os.getenv("NATIVE_AUTH_CLIENT_ID", ""), os.getenv("NATIVE_AUTH_CLIENT_SECRET", ""),
                    pilot_org=os.getenv("NATIVE_REGISTRATION_PILOT_ORG") or None,
+                   pilot_roles=os.getenv("NATIVE_REGISTRATION_AUTO_ROLES") == "true",
                    smtp=os.getenv("NATIVE_AUTH_SMTP_ENABLED") == "true",
                    key=os.getenv("SYNC_ENCRYPTION_KEY", "disabled").encode())
 
@@ -136,6 +140,7 @@ class NativeAccounts:
     def register(self, form):
         first, last = form.fullName.rsplit(" ", 1)
         attributes = {"phone_number": [form.phone.strip()], "requested_role": [form.role.value]}
+        attributes["communitycare_role"] = [form.role.value if self.pilot_roles else "PENDING"]
         if self.pilot_org:
             attributes["dhis_org_unit"] = [self.pilot_org]
         try:
@@ -168,3 +173,53 @@ class NativeAccounts:
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             raise HTTPException(503, "Password reset is temporarily unavailable. Contact your programme administrator.") from None
         return {"message": "If the account exists and has a valid email address, password-reset instructions have been requested."}
+
+    def staff_member(self, org, subject):
+        from uuid import UUID
+        try: UUID(subject)
+        except (ValueError, TypeError): raise HTTPException(422, "Invalid staff reference") from None
+        try:
+            response=self.client.get(self.admin+"/users/"+subject,headers=self._management())
+            if response.status_code==404: raise HTTPException(404,"Staff member not found")
+            response.raise_for_status();user=response.json()
+            attrs=user.get("attributes",{})
+            if not user.get("enabled") or attrs.get("dhis_org_unit") != [org] or user.get("serviceAccountClientId"):
+                raise HTTPException(404,"Staff member not found")
+            return self.staff_view(user)
+        except (httpx.HTTPError,ValueError,KeyError,TypeError):
+            raise HTTPException(503,"Staff service is unavailable") from None
+
+    @staticmethod
+    def staff_view(user):
+        from .permissions import ROLES
+        attrs=user.get("attributes",{});role=attrs.get("communitycare_role",["PENDING"])[0]
+        role=role if role in ROLES else "PENDING"
+        requested=attrs.get("requested_role",["HSA"])[0]
+        return {"id":user["id"],"name":(" ".join([user.get("firstName",""),user.get("lastName","")]).strip() or user.get("username") or "Team member"),
+                "username":user.get("username",""),"role":role,"requestedRole":requested if requested in ROLES else "HSA"}
+
+    def staff_list(self,org,include_pending=False):
+        try:
+            response=self.client.get(self.admin+"/users",headers=self._management(),params={"q":"dhis_org_unit:"+org,"max":101,"briefRepresentation":"false"})
+            response.raise_for_status();users=response.json()
+            users=[u for u in users if u.get("enabled") and u.get("attributes",{}).get("dhis_org_unit")==[org] and not u.get("serviceAccountClientId")]
+            members=[self.staff_view(u) for u in users[:100]]
+            if not include_pending:members=[u for u in members if u["role"]!="PENDING"]
+            return {"orgUnit":org,"members":members,"limited":len(users)>100}
+        except (httpx.HTTPError,ValueError,KeyError,TypeError):raise HTTPException(503,"Staff service is unavailable") from None
+
+    def assign_staff_role(self,org,actor,subject,role):
+        if subject==actor["sub"]:raise HTTPException(403,"Ask another Supervisor to change your own role")
+        if self.staff_member(org,actor["sub"])["role"]!="Supervisor":raise HTTPException(403,"Supervisor approval is required")
+        self.staff_member(org,subject)
+        try:
+            headers=self._management()
+            response=self.client.get(self.admin+"/users/"+subject,headers=headers);response.raise_for_status();user=response.json()
+            attrs=user.get("attributes",{})
+            if attrs.get("dhis_org_unit")!=[org]:raise HTTPException(404,"Staff member not found")
+            attrs["communitycare_role"]=[role]
+            body={key:user[key] for key in ("username","email","firstName","lastName","enabled","emailVerified","requiredActions") if key in user}
+            body["attributes"]=attrs
+            response=self.client.put(self.admin+"/users/"+subject,headers=headers,json=body);response.raise_for_status()
+            return self.staff_member(org,subject)
+        except (httpx.HTTPError,ValueError,KeyError,TypeError):raise HTTPException(503,"Could not update the staff role") from None

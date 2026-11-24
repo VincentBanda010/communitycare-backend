@@ -55,7 +55,7 @@ def test_routes_require_auth_and_matching_facility(room):
     q,org,_=room
     def verify(credentials):
         if credentials is None or credentials.credentials not in ["grace","james"]:raise HTTPException(401)
-        return {"sub":credentials.credentials,"name":credentials.credentials.title(),"dhis_org_unit":org}
+        return {"sub":credentials.credentials,"name":credentials.credentials.title(),"communitycare_role":"HSA", "dhis_org_unit":org}
     storage=SimpleNamespace(open=lambda:None,close=lambda:None,healthy=q.healthy,pool=q.pool,crypto=q.crypto)
     app=create_app(SimpleNamespace(),storage,verify,start_worker=False)
     with TestClient(app) as client:
